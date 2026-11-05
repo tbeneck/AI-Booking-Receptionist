@@ -1,0 +1,15 @@
+# Required for voice + conversation
+OPENAI_API_KEY=sk-...
+
+# Required for phone calls (optional for browser demo)
+TWILIO_ACCOUNT_SID=AC...
+TWILIO_AUTH_TOKEN=...
+TWILIO_PHONE_NUMBER=+15551234567
+
+# Public URL for Twilio webhooks (use ngrok: ngrok http 8000)
+PUBLIC_BASE_URL=https://your-subdomain.ngrok-free.app
+
+# Agent settings
+BUSINESS_NAME=Sunrise Dental Clinic
+REALTIME_MODEL=gpt-4o-realtime-preview
+REALTIME_VOICE=shimmer

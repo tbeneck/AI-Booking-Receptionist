@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Voice Appointment Agent — Demo</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --border: #2d3a4f;
+      --text: #e7ecf3;
+      --muted: #8b9cb3;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --success: #22c55e;
+      --danger: #ef4444;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    header h1 {
+      font-size: 1.75rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    header p {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 768px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+    }
+
+    .card h2 {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      margin-bottom: 1rem;
+    }
+
+    .controls {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+      padding: 1.5rem 0;
+    }
+
+    .call-btn {
+      width: 88px;
+      height: 88px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      font-size: 2rem;
+      transition: transform 0.15s, background 0.15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .call-btn:hover { transform: scale(1.05); }
+    .call-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .call-btn.start {
+      background: var(--success);
+      color: white;
+    }
+
+    .call-btn.stop {
+      background: var(--danger);
+      color: white;
+    }
+
+    .status {
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    .status.active { color: var(--success); }
+
+    .transcript {
+      height: 320px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .msg {
+      padding: 0.65rem 0.85rem;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      max-width: 90%;
+    }
+
+    .msg.user {
+      background: #1e3a5f;
+      align-self: flex-end;
+    }
+
+    .msg.assistant {
+      background: #1f2937;
+      align-self: flex-start;
+    }
+
+    .msg.system {
+      background: transparent;
+      color: var(--muted);
+      font-size: 0.8rem;
+      align-self: center;
+      text-align: center;
+    }
+
+    .msg.tool {
+      background: #1a2e1a;
+      border-left: 3px solid var(--success);
+      align-self: stretch;
+      font-size: 0.82rem;
+      color: #a7f3d0;
+    }
+
+    .appointments-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      max-height: 320px;
+      overflow-y: auto;
+    }
+
+    .appointments-list li {
+      padding: 0.65rem 0.85rem;
+      background: #111827;
+      border-radius: 8px;
+      font-size: 0.85rem;
+    }
+
+    .appointments-list .empty {
+      color: var(--muted);
+      text-align: center;
+      background: transparent;
+    }
+
+    .hint {
+      margin-top: 1.5rem;
+      padding: 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    .hint strong { color: var(--text); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Voice Appointment Agent</h1>
+      <p>Talk naturally to book an appointment — powered by OpenAI Realtime</p>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Live Conversation</h2>
+        <div class="controls">
+          <button id="callBtn" class="call-btn start" title="Start call">📞</button>
+          <div id="status" class="status">Click to start a voice conversation</div>
+        </div>
+        <div id="transcript" class="transcript"></div>
+      </div>
+
+      <div class="card">
+        <h2>Booked Appointments</h2>
+        <ul id="appointments" class="appointments-list">
+          <li class="empty">No appointments yet</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="hint">
+      <strong>Try saying:</strong> "Hi, I'd like to book a dental cleaning next Tuesday."
+      or "Do you have anything available this Friday afternoon?"
+    </div>
+  </div>
+
+  <script>
+    const SAMPLE_RATE = 24000;
+    let ws = null;
+    let audioContext = null;
+    let mediaStream = null;
+    let processor = null;
+    let isActive = false;
+    let playbackTime = 0;
+
+    const callBtn = document.getElementById("callBtn");
+    const statusEl = document.getElementById("status");
+    const transcriptEl = document.getElementById("transcript");
+    const appointmentsEl = document.getElementById("appointments");
+
+    function addMessage(role, text) {
+      const div = document.createElement("div");
+      div.className = `msg ${role}`;
+      div.textContent = text;
+      transcriptEl.appendChild(div);
+      transcriptEl.scrollTop = transcriptEl.scrollHeight;
+    }
+
+    function setStatus(text, active = false) {
+      statusEl.textContent = text;
+      statusEl.className = active ? "status active" : "status";
+    }
+
+    async function refreshAppointments() {
+      try {
+        const res = await fetch("/api/appointments");
+        const data = await res.json();
+        appointmentsEl.innerHTML = "";
+
+        if (!data.appointments.length) {
+          appointmentsEl.innerHTML = '<li class="empty">No appointments yet</li>';
+          return;
+        }
+
+        for (const appt of data.appointments) {
+          const li = document.createElement("li");
+          li.textContent = `${appt.name} — ${appt.appointment_date} at ${appt.appointment_time} (${appt.reason})`;
+          appointmentsEl.appendChild(li);
+        }
+      } catch (err) {
+        console.error("Failed to load appointments", err);
+      }
+    }
+
+    function floatTo16BitPCM(float32Array) {
+      const buffer = new ArrayBuffer(float32Array.length * 2);
+      const view = new DataView(buffer);
+      for (let i = 0; i < float32Array.length; i++) {
+        const s = Math.max(-1, Math.min(1, float32Array[i]));
+        view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+      }
+      return buffer;
+    }
+
+    function arrayBufferToBase64(buffer) {
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binary);
+    }
+
+    function base64ToArrayBuffer(base64) {
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes.buffer;
+    }
+
+    async function playAudioDelta(base64Audio) {
+      if (!audioContext) return;
+
+      const pcmBuffer = base64ToArrayBuffer(base64Audio);
+      const int16 = new Int16Array(pcmBuffer);
+      const float32 = new Float32Array(int16.length);
+      for (let i = 0; i < int16.length; i++) {
+        float32[i] = int16[i] / 32768;
+      }
+
+      const audioBuffer = audioContext.createBuffer(1, float32.length, SAMPLE_RATE);
+      audioBuffer.getChannelData(0).set(float32);
+
+      const source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioContext.destination);
+
+      const now = audioContext.currentTime;
+      const start = Math.max(now, playbackTime);
+      source.start(start);
+      playbackTime = start + audioBuffer.duration;
+    }
+
+    async function startCall() {
+      try {
+        audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
+        playbackTime = audioContext.currentTime;
+
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+            sampleRate: SAMPLE_RATE,
+          },
+        });
+
+        const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+        ws = new WebSocket(`${protocol}//${location.host}/ws/demo`);
+
+        ws.onopen = () => {
+          setStatus("Connected — speak naturally", true);
+          addMessage("system", "Connected. The agent will greet you shortly.");
+          startMicCapture();
+        };
+
+        ws.onmessage = async (event) => {
+          const data = JSON.parse(event.data);
+
+          if (data.type === "audio") {
+            await playAudioDelta(data.data);
+          } else if (data.type === "transcript") {
+            addMessage(data.role, data.text);
+          } else if (data.type === "tool_call") {
+            addMessage("tool", `${data.name}: ${data.result.message || JSON.stringify(data.result)}`);
+            refreshAppointments();
+          } else if (data.type === "error") {
+            addMessage("system", `Error: ${data.message || JSON.stringify(data.event)}`);
+          }
+        };
+
+        ws.onclose = () => {
+          stopCall(false);
+          addMessage("system", "Call ended.");
+        };
+
+        ws.onerror = () => {
+          addMessage("system", "Connection error — check that OPENAI_API_KEY is set.");
+        };
+
+        callBtn.className = "call-btn stop";
+        callBtn.textContent = "⏹";
+        callBtn.title = "End call";
+        isActive = true;
+
+      } catch (err) {
+        addMessage("system", `Microphone error: ${err.message}`);
+        setStatus("Microphone access denied");
+      }
+    }
+
+    function startMicCapture() {
+      const source = audioContext.createMediaStreamSource(mediaStream);
+      processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+      processor.onaudioprocess = (e) => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+        const input = e.inputBuffer.getChannelData(0);
+        const pcm = floatTo16BitPCM(input);
+        ws.send(JSON.stringify({
+          type: "audio",
+          data: arrayBufferToBase64(pcm),
+        }));
+      };
+
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+    }
+
+    function stopCall(manual = true) {
+      isActive = false;
+
+      if (processor) {
+        processor.disconnect();
+        processor = null;
+      }
+
+      if (mediaStream) {
+        mediaStream.getTracks().forEach((t) => t.stop());
+        mediaStream = null;
+      }
+
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+
+      if (audioContext) {
+        audioContext.close();
+        audioContext = null;
+      }
+
+      callBtn.className = "call-btn start";
+      callBtn.textContent = "📞";
+      callBtn.title = "Start call";
+      setStatus("Click to start a voice conversation");
+    }
+
+    callBtn.addEventListener("click", () => {
+      if (isActive) {
+        stopCall();
+      } else {
+        transcriptEl.innerHTML = "";
+        startCall();
+      }
+    });
+
+    refreshAppointments();
+    setInterval(refreshAppointments, 5000);
+  </script>
+</body>
+</html>
